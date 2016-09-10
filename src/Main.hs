@@ -205,5 +205,4 @@ toReason (4,0,4) = "Not Found"
 toReason (_,_,_) = error "No reason found!"
 
 manyRetriesConfig :: Console -> DhcpConfig
-manyRetriesConfig con = defaultDhcpConfig{ dcRetries = 50000
-                                         , dcOnRetry = \ x -> writeConsole con ("Retry: " ++ show x ++ " left\n") }
+manyRetriesConfig _ = defaultDhcpConfig{ dcRetries = 50000 }
