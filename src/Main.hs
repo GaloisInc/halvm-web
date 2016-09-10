@@ -22,7 +22,6 @@ import           Hans.IP4.Dhcp.Client(DhcpLease(..), DhcpConfig(..), dhcpClient,
                                       defaultDhcpConfig)
 import           Hans.Socket(TcpListenSocket, sListen, sAccept,
                              defaultSocketConfig)
-import           Hexdump
 import           Hypervisor.Console(Console, initXenConsole, writeConsole)
 import           Hypervisor.DomainInfo(domainModuleStart, domainModuleLength,
                                        DomainFlags(..), domainFlags)
