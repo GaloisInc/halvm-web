@@ -52,3 +52,25 @@ This will print a lot of status updates, but at the end of this process, it will
 give you an AMI reference. Go to your AWS console, and you can launch it as
 normal; just make sure to give it a network card, and make sure that the
 security group you assign it allows for access to port 80.
+
+# Option #3: I want to run this on another Xen machine!
+
+That's cool ... but I'm afraid we haven't really optimized this case. But the
+core idea is the same. You'll first need to build the `halvm-web` binary and
+transfer it to your target machine. You can do this with Docker, as above.
+Then you'll need to build your site as a static, uncompressed tarball. Please
+make sure that your site lives under the `site/` path! In other words, your site
+index should be `site/index.html` in the tarball. Once you've got this working,
+transfer it to the target machine, as well.
+
+Finally, the file `halvm-web.config` should provide a good, basic structure for
+a Xen config file for your virtual machine. You'll need to open it up and update
+the paths appropriately. Once you're done, try `sudo xl create halvm-web.config
+-c`, and you should be good to go!
+
+# How does this thing work?
+
+`Halvm-web` works by combining a web serving core (the `halvm-web` binary) with
+A "(ramdisk)[http://en.wikipedia.org/wiki/Initrd]" that contains the content.
+This way you can update your content without having to constantly rebuild the
+web server.
