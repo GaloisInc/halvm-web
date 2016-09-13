@@ -15,8 +15,10 @@ tools](https://github.com/GaloisInc/HaLVM/wiki/Using-Docker-and-the-HaLVM). In
 this case, perform the following steps:
 
   1. `git clone https://github.com/GaloisInc/halvm-web`
-  1. `docker run -v ${PWD}:halvm halvm/extended halvm-cabal sandbox init`
-  1. `docker run -v ${PWD}:halvm halvm/extended halvm-cabal install`
+  1. `docker run -v ${PWD}:/halvm halvm/extended-gmp halvm-cabal sandbox init`
+  1. `docker run -v ${PWD}:/halvm halvm/extended-gmp halvm-cabal install --package-db=/usr/lib64/HaLVM-2.1.1/package.conf.d`
+
+[sorry for the weird argument there. We're working on it.]
 
 These three steps will create a `.cabal-sandbox/bin/halvm-web` binary on your
 local disk, which contains the `halvm-web` unikernel. Now its up to you to build
