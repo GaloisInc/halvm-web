@@ -71,6 +71,6 @@ the paths appropriately. Once you're done, try `sudo xl create halvm-web.config
 # How does this thing work?
 
 `Halvm-web` works by combining a web serving core (the `halvm-web` binary) with
-A "(ramdisk)[http://en.wikipedia.org/wiki/Initrd]" that contains the content.
+a "[ramdisk](http://en.wikipedia.org/wiki/Initrd)" that contains the content.
 This way you can update your content without having to constantly rebuild the
 web server.
