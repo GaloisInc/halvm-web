@@ -46,7 +46,7 @@ long. Also, I'm going to assume that you have the appropriate AWS credentials
 stored in `AWS_ACCESS_KEY` and `AWS_SECRET_KEY`, as per normal.
 
   1. `tar cvf site.tar site/`
-  1. `docker run -v ${PWD}/halvm halvm/extended ec2-unikernel -o ${AWS_ACCESS_KEY} -w ${AWS_SECRET_KEY} .cabal-sandbox/bin/halvm-web site.tar`
+  1. `docker run -v ${PWD}:/halvm halvm/extended ec2-unikernel -o ${AWS_ACCESS_KEY} -w ${AWS_SECRET_KEY} .cabal-sandbox/bin/halvm-web site.tar`
 
 This will print a lot of status updates, but at the end of this process, it will
 give you an AMI reference. Go to your AWS console, and you can launch it as
