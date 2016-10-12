@@ -70,6 +70,10 @@ main =
                        do writeConsole con ("Started on "++showIP4 addr ""++":80\n")
                           forever $ do sock <- sAccept (lsock :: TcpListenSocket IP4)
                                        handleClient con (handleReq archive) sock
+          writeConsole con ("Known keys:\n")
+          writeConsole con ("-----------------------------------------------\n")
+          forM_ (Map.keys archive) (\ k -> writeConsole con (show k ++ "\n"))
+          writeConsole con ("-----------------------------------------------\n")
           forever (threadDelay (15 * 1000 * 1000))
 
 unarchiveAndMerge :: Console -> Archive -> (String, ByteString) -> IO Archive
