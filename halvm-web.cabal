@@ -1,5 +1,5 @@
 name:                halvm-web
-version:             0.1.0.0
+version:             0.3.0.0
 synopsis:            A simple, static HaLVM web server
 description:         A simple, static HaLVM web server
 homepage:            http://halvm.org
