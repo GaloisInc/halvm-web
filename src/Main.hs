@@ -13,6 +13,8 @@ import           Data.ByteString.Unsafe(unsafePackCStringLen)
 import           Data.Char(toLower)
 import qualified Data.Map.Strict as Map
 import           Data.Serialize.Get(runGet, getWord32host)
+import           Data.Text(pack, unpack)
+import           Data.Text.Encoding(decodeUtf8)
 import           Foreign.Ptr(castPtr, nullPtr)
 import           Hans(newNetworkStack, addDevice, startDevice, processPackets,
                        defaultConfig)
@@ -20,8 +22,10 @@ import           Hans.Device(Device(..), listDevices, defaultDeviceConfig)
 import           Hans.IP4.Packet(IP4, showIP4)
 import           Hans.IP4.Dhcp.Client(DhcpLease(..), DhcpConfig(..), dhcpClient,
                                       defaultDhcpConfig)
+import           Hans.Addr(NetworkAddr, toAddr, showAddr)
+import           Hans.Lens(view)
 import           Hans.Socket(TcpListenSocket, sListen, sAccept,
-                             defaultSocketConfig)
+                             tcpRemoteAddr, defaultSocketConfig)
 import           Hypervisor.Console(Console, initXenConsole, writeConsole)
 import           Hypervisor.DomainInfo(domainModuleStart, domainModuleLength,
                                        DomainFlags(..), domainFlags)
@@ -31,6 +35,7 @@ import           Network.HTTP.Headers(HeaderName(..), retrieveHeaders, mkHeader,
                                       hdrValue)
 import           Network.HTTP.Stream(Stream(..), receiveHTTP, respondHTTP)
 import           Network.HTTP.Streams()
+import           Network.Mime(mimeByExt, defaultMimeMap, defaultMimeType)
 import           Network.URI(URI(..))
 
 main :: IO ()
@@ -69,7 +74,8 @@ main =
                      handle (handleErr con ("on socket for " ++ showIP4 addr "")) $
                        do writeConsole con ("Started on "++showIP4 addr ""++":80\n")
                           forever $ do sock <- sAccept (lsock :: TcpListenSocket IP4)
-                                       handleClient con (handleReq archive) sock
+                                       let r = view tcpRemoteAddr sock
+                                       handleClient con (handleReq con archive r) sock
           writeConsole con ("Known keys:\n")
           writeConsole con ("-----------------------------------------------\n")
           forM_ (Map.keys archive) (\ k -> writeConsole con (show k ++ "\n"))
@@ -109,8 +115,11 @@ data Result = Result {
      , _resBody :: ByteString
      }
 
-handleReq :: Archive -> Request String -> IO Result
-handleReq archive req =
+handleReq :: NetworkAddr addr =>
+             Console -> Archive ->
+             addr -> Request String ->
+             IO Result
+handleReq con archive fromAddr req =
   go ("site" ++ uriPath (rqURI req)) (2,0,0) $
     go ("site/404.html") (4,0,4) $
       return (Result (4,0,4) "text/html" builtin404)
@@ -120,7 +129,11 @@ handleReq archive req =
   go key code otherwiseDo = putStrLn ("go " ++ key ++ " " ++ show code ++ "\n") >>
     case Map.lookup key archive of
       Just (RegularFileMember rfile) ->
-        return (Result code "text/html" (regContents rfile))
+        do let mimeType = mimeByExt defaultMimeMap defaultMimeType (pack key)
+               mimeType' = unpack (decodeUtf8 mimeType)
+           writeConsole con ("Request for " ++ key ++ " (" ++ mimeType' ++
+                             ") from " ++ showAddr (toAddr fromAddr) "")
+           return (Result code mimeType' (regContents rfile))
       Just (LinkMember link) ->
         go (linkTarget link) code otherwiseDo
       Just (SymbolicLinkMember link) ->
