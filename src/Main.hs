@@ -15,7 +15,9 @@ import           System.FilePath((</>))
 
 import           Backend(Backend(..),handleErr)
 #if defined(HALVM)
-import           Backend.HaLVM(initializeBackend)
+import           Backend.Hans.HaLVM(initializeBackend)
+#elif defined(FORCE_HANS)
+import           Backend.Hans.POSIX(initializeBackend)
 #else
 import           Backend.Network(initializeBackend)
 #endif

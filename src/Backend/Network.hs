@@ -3,9 +3,7 @@ module Backend.Network(initializeBackend)
 
 import           Backend(Backend(..))
 import           Control.Exception(SomeException,handle)
-import           Control.Monad(foldM,when,void)
-import qualified Data.ByteString as S
-import           Data.List(isPrefixOf)
+import           Control.Monad(when,void)
 import           Data.Word(Word16)
 import           Network.Socket(Socket,AddrInfo(..),AddrInfoFlag(..),
                                 Family(..),SocketType(..),SockAddr(..),
@@ -17,9 +15,8 @@ import qualified Network.Socket as Socket(listen,accept,close)
 import           Network.Socket.ByteString(sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket(send,recv)
 import           Numeric(showHex)
+import           POSIXArgs(getTarballArgs,getLoggerArgs)
 import           Syslog(createSyslogger)
-import           System.Directory(doesFileExist)
-import           System.Environment(getArgs)
 
 initializeBackend :: IO (Backend Socket Socket)
 initializeBackend =
@@ -33,6 +30,26 @@ initializeBackend =
             , getTarballs = getTarballArgs
             , logMsg      = logger
             }
+
+getLogger :: IO (String -> IO ())
+getLogger =
+  do margs <- getLoggerArgs
+     case margs of
+       Nothing -> return (putStrLn . ("LOG: " ++ ))
+       Just (hostname, address, port) ->
+         do ainfos <- getAddrInfo datagramProt (Just address) (Just "syslog")
+            when (null ainfos) $
+              fail ("Couldn't look up address of " ++ address)
+            let ai = head ainfos
+            s <- socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai)
+            let port' = fromIntegral port
+                addr = case addrAddress ai of
+                         SockAddrInet _ ha -> SockAddrInet port' ha
+                         SockAddrInet6 _ i ha si -> SockAddrInet6 port' i ha si
+                         _ -> error "Invalid target address (not IPv4 or IPv6)"
+            return (createSyslogger (\msg -> void (sendTo s msg addr)) hostname)
+ where
+  datagramProt = Just defaultHints{ addrSocketType = Datagram }
 
 bindEverything :: Word16 -> IO Socket
 bindEverything port =
@@ -58,47 +75,6 @@ runAccept sock =
        SockAddrInet  p   ha   -> return (showAddr4 ha, fromIntegral p, sock')
        SockAddrInet6 p _ ha _ -> return (showAddr6 ha, fromIntegral p, sock')
        _                      -> fail "Accepted weird socket type"
-
-getTarballArgs :: IO [(String, S.ByteString)]
-getTarballArgs = foldM maybeAddFile [] =<< getArgs
- where
-  maybeAddFile acc arg =
-    do doAdd <- doesFileExist arg
-       if doAdd
-          then do contents <- S.readFile arg
-                  return ((arg, contents) : acc)
-          else return acc
-
-getLogger :: IO (String -> IO ())
-getLogger = foldM maybeLogger (putStrLn . ("LOG: " ++)) =<< getArgs
- where
-  maybeLogger acc x | "syslog:" `isPrefixOf` x = parseLogger x
-                    | otherwise                = return acc
-
-parseLogger :: String -> IO (String -> IO ())
-parseLogger x =
-  do let (_,        rest0) = span (/= ':') x
-         (hostname, rest1) = span (/= ':') (drop 1 rest0)
-         (address,  rest2) = span (/= ':') (drop 1 rest1)
-     port <- forceRead "port number" (drop 1 rest2)
-     ainfos <- getAddrInfo (Just datagramProt) (Just address) (Just "syslog")
-     when (null ainfos) $
-       fail ("Couldn't look up address of " ++ address)
-     let ainfo = head ainfos
-     s <- socket (addrFamily ainfo) (addrSocketType ainfo) (addrProtocol ainfo)
-     let addr = case addrAddress ainfo of
-                  SockAddrInet _ ha -> SockAddrInet port ha
-                  SockAddrInet6 _ fi ha sid -> SockAddrInet6 port fi ha sid
-                  _ -> error "Invalid target address (not IPv4 or IPv6)"
-     return (createSyslogger (\msg -> void (sendTo s msg addr)) hostname)
- where
-  datagramProt = defaultHints{ addrSocketType = Datagram }
-
-forceRead :: Read a => String -> String -> IO a
-forceRead msg x =
-  case reads x of
-    [(v, "")] -> return v
-    _         -> fail ("Parse error reading syslog " ++ msg)
 
 aiHints :: AddrInfo
 aiHints = defaultHints{ addrFlags = [AI_PASSIVE,AI_NUMERICSERV,AI_NUMERICHOST]

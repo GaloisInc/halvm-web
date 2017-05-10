@@ -1,9 +1,8 @@
 module Syslog(createSyslogger) where
 
-import           Backend
 import           Data.ByteString(ByteString)
 import qualified Data.ByteString.Char8 as S8
-import           Data.Time.Clock(UTCTime,getCurrentTime)
+import           Data.Time.Clock(getCurrentTime)
 import           Data.Time.Format(formatTime,defaultTimeLocale)
 
 createSyslogger :: (ByteString -> IO ()) -> String -> String -> IO ()
