@@ -86,9 +86,9 @@ unarchiveAndMerge backend acc (name, bstr) =
   case unarchive bstr of
     Left err ->
       do logMsg backend (show (S.length bstr) ++ " byte archive " ++ name ++
-                         " failed to expand: " ++ err ++ "\n")
+                         " failed to expand: " ++ err)
          return acc
     Right archive ->
       do logMsg backend (show (S.length bstr) ++ " byte archive " ++ name ++
-                         " unarchived.\n")
+                         " unarchived.")
          return (archive `Map.union` acc)
