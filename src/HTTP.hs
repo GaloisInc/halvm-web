@@ -4,7 +4,9 @@ module HTTP(handleConnection)
 
 import           Backend(Backend(..),handleErr,sendAll)
 import           Control.Applicative
-import           Control.Monad(void)
+import           Control.Concurrent(forkIO)
+import           Control.Exception(finally)
+import           Control.Monad(void,when)
 import           Data.Attoparsec.ByteString as P
 import           Data.Attoparsec.ByteString.Char8(char8, endOfLine, isDigit_w8,
                                                   isEndOfLine,isHorizontalSpace)
@@ -14,18 +16,27 @@ import           Data.ByteString.Builder(Builder,string8,intDec,
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as S8
 import qualified Data.ByteString.Lazy as L
+import           Data.Maybe(isNothing)
 import           Data.Monoid((<>),mempty,mconcat)
 import           Data.Time.Clock(UTCTime,getCurrentTime)
 import           Data.Time.Format(formatTime,defaultTimeLocale)
 import           Data.Version(showVersion)
 import           Data.Word (Word8,Word16)
 import           Paths_halvm_web(version)
+import           System.Timeout(timeout)
 
 handleConnection :: Backend ls s -> s -> String -> Word16 ->
                     (FilePath -> IO (Int,String,Maybe UTCTime,S.ByteString)) ->
                     IO ()
 handleConnection backend sock host port handleReq =
-  void $ handleErr backend (host ++ ":" ++ show port) $
+  void $ forkIO $
+    finally (handleErr backend (host ++ ":" ++ show port) $
+              do res <- timeout 3000000 actuallyDoIt
+                 when (isNothing res) $
+                   logMsg backend "Gave up responding to request.")
+            (close backend sock)
+  where
+  actuallyDoIt =
     do (req, _) <- get (P.parse request S.empty) []
        now      <- getCurrentTime
        case requestMethod req of
@@ -34,12 +45,10 @@ handleConnection backend sock host port handleReq =
                      let bstr = buildResponse req now code mimeType []
                                               lmod body
                      sendAll backend sock bstr
-                     close backend sock
          _     -> do let bstr = buildResponse req now 405 "text/html"
                                               [allowGET] Nothing ""
                      sendAll backend sock bstr
-                     close backend sock
- where
+
   get :: P.Result (Request, [Header]) -> [S.ByteString] ->
          IO (Request, [Header])
   get (Fail _ _ msg) _        = fail ("Parse error: " ++ msg)
