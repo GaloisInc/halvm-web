@@ -15,8 +15,8 @@ import qualified Network.Socket as Socket(listen,accept,close)
 import           Network.Socket.ByteString(sendTo)
 import qualified Network.Socket.ByteString.Lazy as Socket(send,recv)
 import           Numeric(showHex)
-import           POSIXArgs(getTarballArgs,getLoggerArgs)
-import           Syslog(createSyslogger)
+import           POSIXArgs(getTarballArgs)
+import           Syslog(createSyslogger,getLoggerArgs)
 
 initializeBackend :: IO (Backend Socket Socket)
 initializeBackend =

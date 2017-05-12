@@ -14,7 +14,7 @@ import           Network.Mime(mimeByExt, defaultMimeMap, defaultMimeType)
 import           System.FilePath((</>))
 
 import           Backend(Backend(..),handleErr)
-#if defined(HALVM)
+#if defined(HaLVM_HOST_OS)
 import           Backend.Hans.HaLVM(initializeBackend)
 #elif defined(FORCE_HANS)
 import           Backend.Hans.POSIX(initializeBackend)
@@ -24,13 +24,13 @@ import           Backend.Network(initializeBackend)
 
 import           HTTP(handleConnection)
 
-
 main :: IO ()
 main =
   do backend  <- initializeBackend
      tarballs <- getTarballs backend
      archive  <- foldM (unarchiveAndMerge backend) Map.empty tarballs
      lsock    <- listen backend 9030
+     logMsg backend "Ready to go!"
      forever $
        handleErr backend "accept loop" $
          do (host, port, sock) <- accept backend lsock

@@ -4,15 +4,18 @@ module Backend.Hans.Common(HansBackend,initializeHansBackend)
 
 import           Backend(Backend(..))
 import           Control.Concurrent(forkIO)
+import           Control.Concurrent.Async(Async,async,waitAny)
 import           Control.Exception(SomeException, handle, throwIO)
-import           Control.Monad(void)
+import           Control.Monad(void,mapM_)
+import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as S8
 import           Data.ByteString.Lazy(ByteString,fromStrict)
+import           Data.List(delete)
 import           Data.Word(Word16)
-import           Hans(NetworkStack, Device, DeviceName, IP4,
-                      newNetworkStack, addDevice,
-                      startDevice, processPackets, defaultConfig,
-                      defaultDeviceConfig)
+import           Hans(NetworkStack, Device, DeviceName, IP4, DeviceConfig,
+                      newNetworkStack, defaultDeviceConfig,
+                      startDevice, processPackets, defaultConfig)
+import           Hans.Device.Types(Device(..))
 import           Hans.Dns(HostEntry(..),getHostByName)
 import           Hans.IP4.Dhcp.Client(DhcpLease(..), dhcpClient,
                                       defaultDhcpConfig)
@@ -22,48 +25,85 @@ import           Hans.Socket(TcpListenSocket, TcpSocket,
                              tcpRemoteAddr, tcpRemotePort,
                              newUdpSocket, sendto, sRead, sWrite, sClose,
                              sListen, sAccept, defaultSocketConfig)
-import           POSIXArgs(getTarballArgs, getLoggerArgs)
-import           Syslog(createSyslogger)
+import           Syslog(createSyslogger, getLoggerArgs)
 
 type HansBackend = Backend (TcpListenSocket IP4) (TcpSocket IP4)
 
-initializeHansBackend :: DeviceName -> IO HansBackend
-initializeHansBackend devName =
+initializeHansBackend ::
+  (NetworkStack -> DeviceName -> DeviceConfig -> IO Device) ->
+  [DeviceName] ->
+  IO [(String, S.ByteString)] ->
+  IO HansBackend
+initializeHansBackend addDevice devNames getFiles =
   do ns <- newNetworkStack defaultConfig
-     dev <- addDevice ns devName defaultDeviceConfig
-     startDevice dev
-     void $ handle (\ e -> do putStrLn (show (e :: SomeException))
-                              throwIO e)
-                   (forkIO (processPackets ns))
-     mlease <- dhcpClient ns defaultDhcpConfig dev
-     case mlease of
-       Nothing -> fail "Couldn't get DHCP address"
-       Just lease ->
-         do let addr = dhcpAddr lease
-            logger <- getLogger ns dev addr
-            logger ("Connected on device " ++ S8.unpack devName ++
-                    " at address " ++ showIP4 addr ".")
-            return Backend {
-                listen      = hansListen ns addr
-              , accept      = hansAccept
-              , recv        = hansRecv
-              , send        = hansSend
-              , close       = hansClose
-              , getTarballs = getTarballArgs
-              , logMsg      = logger
-              }
+     devs <- mapM (\ n -> addDevice ns n defaultDeviceConfig) devNames
+     mapM_ startDevice (devs :: [Device])
+     void $ forkIO $ handle (\ e -> do putStrLn (show (e :: SomeException))
+                                       throwIO e)
+                        (processPackets ns)
+     (logger, lease) <- waitForGoodLeases ns =<< mapM (getLease ns) devs
+     return Backend {
+         listen      = hansListen ns (dhcpAddr lease)
+       , accept      = hansAccept
+       , recv        = hansRecv
+       , send        = hansSend
+       , close       = hansClose
+       , getTarballs = getFiles
+       , logMsg      = logger
+       }
 
-getLogger :: NetworkStack -> Device -> IP4 -> IO (String -> IO ())
-getLogger ns dev me =
-  do margs <- getLoggerArgs
-     case margs of
-       Nothing -> return (putStrLn . ("LOG: " ++))
-       Just (hostname, address, port) ->
-         do addr <- getTarget ns address
-            udpSock <- newUdpSocket ns defaultSocketConfig (Just dev) me Nothing
-            let hostname' = showIP4 me ("/" ++ hostname)
-                out       = sendto udpSock addr port . fromStrict
-            return (createSyslogger out hostname')
+getLease ::
+  NetworkStack ->
+  Device ->
+  IO (Async (Device, Maybe DhcpLease))
+getLease ns dev =
+  async $
+    do res <- dhcpClient ns defaultDhcpConfig dev
+       return (dev, res)
+
+waitForGoodLeases ::
+  NetworkStack ->
+  [Async (Device, Maybe DhcpLease)] ->
+  IO (String -> IO (), DhcpLease)
+waitForGoodLeases ns asyncs = go Nothing asyncs
+ where
+  go Nothing [] =
+    fail "Couldn't get a DHCP lease for the server."
+  go (Just res) [] =
+    return res
+  go prev ls =
+    do (theFinishedOne, itsAnswer) <- waitAny ls
+       case itsAnswer of
+         (_, Nothing) ->
+           go prev (delete theFinishedOne ls)
+         (dev, Just lease) | Nothing <- prev ->
+           do let addr = dhcpAddr lease
+              logger <- getLogger ns dev addr =<< getLoggerArgs
+              logger ("Initialized halvm-web at " ++
+                      showIP4 addr " on " ++ S8.unpack (devName dev))
+              go (Just (logger, lease)) (delete theFinishedOne ls)
+         (dev, Just lease) | Just (logger, _) <- prev ->
+           do logger ("Also got DHCP lease for " ++
+                      showIP4 (dhcpAddr lease) " on device " ++
+                      S8.unpack (devName dev) ++ ".")
+              go prev (delete theFinishedOne ls)
+
+getLogger ::
+  NetworkStack ->
+  Device ->
+  IP4 ->
+  Maybe (String, String, Word16) ->
+  IO (String -> IO ())
+getLogger ns dev me margs =
+  case margs of
+    Nothing -> return (putStrLn . ("LOG: " ++))
+    Just (hostname, address, port) ->
+      do addr <- getTarget ns address
+         udpSock <- newUdpSocket ns defaultSocketConfig (Just dev) me
+                    Nothing
+         let hostname' = showIP4 me ("/" ++ hostname)
+             out       = sendto udpSock addr port . fromStrict
+         return (createSyslogger out hostname')
 
 getTarget :: NetworkStack -> String -> IO IP4
 getTarget ns str =
