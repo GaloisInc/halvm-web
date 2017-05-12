@@ -5,12 +5,15 @@ import           Codec.Archive.Tar(Archive, ArchiveMember(..), unarchive,
 import           Control.Monad(forever, foldM)
 import qualified Data.ByteString as S
 import           Data.ByteString(ByteString)
+import           Data.List(isPrefixOf)
 import qualified Data.Map.Strict as Map
 import           Data.Text(pack, unpack)
 import           Data.Text.Encoding(decodeUtf8)
 import           Data.Time.Clock(UTCTime,getCurrentTime)
 import           Data.Time.Format(formatTime,defaultTimeLocale)
+import           Data.Word(Word16)
 import           Network.Mime(mimeByExt, defaultMimeMap, defaultMimeType)
+import           System.Environment(getArgs)
 import           System.FilePath((</>))
 
 import           Backend(Backend(..),handleErr)
@@ -29,16 +32,28 @@ main =
   do backend  <- initializeBackend
      tarballs <- getTarballs backend
      archive  <- foldM (unarchiveAndMerge backend) Map.empty tarballs
-     lsock    <- listen backend 9030
-     logMsg backend "Ready to go!"
+     port     <- getPort
+     lsock    <- listen backend port
+     logMsg backend ("Ready to go with " ++ show (Map.size archive) ++
+                     " files.")
      forever $
        handleErr backend "accept loop" $
-         do (host, port, sock) <- accept backend lsock
-            handleConnection backend sock host port $ \ req ->
+         do (host, theirport, sock) <- accept backend lsock
+            handleConnection backend sock host theirport $ \ req ->
               do let req' = "site" ++ req
                  res@(rsp,_,_,body) <-  handleRequest backend req' archive
                  logRequest backend host req rsp (S.length body)
                  return res
+
+getPort :: IO Word16
+getPort =
+  do args <- getArgs
+     case filter ("port:" `isPrefixOf`) args of
+       [] -> return 80
+       xs ->
+         case reads (drop 5 (last xs)) of
+           (x,_):_ -> return x
+           _ -> fail "Couldn't parse port number."
 
 logRequest :: Backend ls s -> String -> FilePath -> Int -> Int -> IO ()
 logRequest backend host path statusCode bodySize =
